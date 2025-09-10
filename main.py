@@ -11,9 +11,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi import Query, Path
 from typing import Optional
 
-from models.person import PersonCreate, PersonRead, PersonUpdate
+from models.person import PersonCreate, PersonRead, PersonUpdate, UNIType
 from models.address import AddressCreate, AddressRead, AddressUpdate
 from models.health import Health
+from models.organization import OrganizationCreate, OrganizationRead, OrganizationUpdate
+from models.house import HouseRead, HouseCreate, HouseUpdate
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
@@ -22,10 +24,12 @@ port = int(os.environ.get("FASTAPIPORT", 8000))
 # -----------------------------------------------------------------------------
 persons: Dict[UUID, PersonRead] = {}
 addresses: Dict[UUID, AddressRead] = {}
+organizations: Dict[UUID, OrganizationRead] = {}
+houses: Dict[UUID, HouseRead] = {}
 
 app = FastAPI(
-    title="Person/Address API",
-    description="Demo FastAPI app using Pydantic v2 models for Person and Address",
+    title="Person/Address/Organization/House API",
+    description="Demo FastAPI app using Pydantic v2 models for Person, Address, Organization, and House",
     version="0.1.0",
 )
 
@@ -98,6 +102,7 @@ def update_address(address_id: UUID, update: AddressUpdate):
     stored = addresses[address_id].model_dump()
     stored.update(update.model_dump(exclude_unset=True))
     addresses[address_id] = AddressRead(**stored)
+    addresses[address_id].updated_at = datetime.utcnow().isoformat()
     return addresses[address_id]
 
 # -----------------------------------------------------------------------------
@@ -157,14 +162,120 @@ def update_person(person_id: UUID, update: PersonUpdate):
     stored = persons[person_id].model_dump()
     stored.update(update.model_dump(exclude_unset=True))
     persons[person_id] = PersonRead(**stored)
+    persons[person_id].updated_at = datetime.utcnow().isoformat()
     return persons[person_id]
+
+# -----------------------------------------------------------------------------
+# Organization endpoints
+# -----------------------------------------------------------------------------
+@app.post("/organization", response_model=OrganizationRead, status_code=201)
+def create_organization(organization: OrganizationCreate):
+    if organization.id in organizations:
+        raise HTTPException(status_code=400, detail="Organization with this ID already exists")
+    organization_read = OrganizationRead(**organization.model_dump())
+    organizations[organization_read.id] = organization_read
+    return organization_read
+
+@app.get("/organizations", response_model=List[OrganizationRead])
+def list_organizations(
+        org_name: Optional[str] = Query(None, description="Filter by organization name"),
+        email: Optional[str] = Query(None, description="Filter by email"),
+        phone: Optional[str] = Query(None, description="Filter by phone number"),
+        city: Optional[str] = Query(None, description="Filter by city of address"),
+        country: Optional[str] = Query(None, description="Filter by country of address"),
+):
+    results = list(organizations.values())
+
+    if org_name is not None:
+        results = [p for p in results if p.org_name == org_name]
+    if email is not None:
+        results = [p for p in results if p.email == email]
+    if phone is not None:
+        results = [p for p in results if p.phone == phone]
+
+    # nested address filtering
+    if city is not None:
+        results = [p for p in results if p.address.city == city]
+    if country is not None:
+        results = [p for p in results if p.address.country == country]
+
+    return results
+
+@app.get("/organizations/{organization_id}", response_model=OrganizationRead)
+def get_organization(organization_id: UUID):
+    if organization_id not in organizations:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return organizations[organization_id]
+
+@app.patch("/organizations/{organization_id}", response_model=OrganizationRead)
+def update_organization(organization_id: UUID, update: OrganizationUpdate):
+    if organization_id not in organizations:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    stored = organizations[organization_id].model_dump()
+    stored.update(update.model_dump(exclude_unset=True))
+    organizations[organization_id] = OrganizationRead(**stored)
+    organizations[organization_id].updated_at = datetime.utcnow().isoformat()
+    return organizations[organization_id]
+
+
+# -----------------------------------------------------------------------------
+# House endpoints
+# -----------------------------------------------------------------------------
+@app.post("/house", response_model=HouseRead, status_code=201)
+def create_house(house: HouseCreate):
+    if house.id in houses:
+        raise HTTPException(status_code=400, detail="House with this ID already exists")
+    house_read = HouseRead(**house.model_dump())
+    houses[house_read.id] = house_read
+    return house_read
+
+@app.get("/houses", response_model=List[HouseRead])
+def list_houses(
+        phone: Optional[str] = Query(None, description="Filter by phone number"),
+        person_uni: Optional[UNIType] = Query(None, description="Filter by person"),
+        city: Optional[str] = Query(None, description="Filter by city of address"),
+        country: Optional[str] = Query(None, description="Filter by country of address"),
+):
+    results = list(houses.values())
+
+    if phone is not None:
+        results = [p for p in results if p.phone == phone]
+
+    # nested address filtering
+    if city is not None:
+        results = [p for p in results if p.address.city == city]
+    if country is not None:
+        results = [p for p in results if p.address.country == country]
+
+    # nested person filtering
+    if person_uni is not None:
+        results = [p for p in results if person_uni == uni for uni in p.people]
+
+    return results
+
+@app.get("/houses/{house_id}", response_model=HouseRead)
+def get_house(house_id: UUID):
+    if house_id not in houses:
+        raise HTTPException(status_code=404, detail="House not found")
+    return houses[house_id]
+
+@app.patch("/houses/{house_id}", response_model=HouseRead)
+def update_house(house_id: UUID, update: HouseUpdate):
+    if house_id not in houses:
+        raise HTTPException(status_code=404, detail="House not found")
+    stored = houses[house_id].model_dump()
+    stored.update(update.model_dump(exclude_unset=True))
+    houses[house_id] = HouseRead(**stored)
+    houses[house_id].updated_at = datetime.utcnow().isoformat()
+    return houses[house_id]
+
 
 # -----------------------------------------------------------------------------
 # Root
 # -----------------------------------------------------------------------------
 @app.get("/")
 def root():
-    return {"message": "Welcome to the Person/Address API. See /docs for OpenAPI UI."}
+    return {"message": "Welcome to the Person/Address/Organization/House API. See /docs for OpenAPI UI."}
 
 # -----------------------------------------------------------------------------
 # Entrypoint for `python main.py`
