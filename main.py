@@ -249,7 +249,7 @@ def list_houses(
 
     # nested person filtering
     if person_uni is not None:
-        results = [p for p in results if person_uni == uni for uni in p.people]
+        results = [p for p in results if any(uni == person_uni for uni in p.people)]
 
     return results
 
